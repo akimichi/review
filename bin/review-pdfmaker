@@ -242,8 +242,9 @@ EOB
 
   custom_titlepage = make_custom_titlepage(config["coverfile"])
 
-  template = File.expand_path(File.dirname(__FILE__) +
-                              '/../lib/review/review.tex.erb')
+  template = File.join(@basedir, "layouts", "review.tex.erb")
+  # template = File.expand_path(File.dirname(__FILE__) +
+  #                             '/../lib/review/review.tex.erb')
   layout_file = File.join(@basedir, "layouts", "layout.tex.erb")
   if File.exist?(layout_file)
     template = layout_file
