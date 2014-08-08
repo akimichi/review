@@ -470,7 +470,8 @@ module ReVIEW
 
       f.each do |line|
         case line
-        when /(?:\A\#@|\#@@)([a-z]+)_(begin|end)\((.*)\)/
+        when /(?:\#@|\#@@)([a-z]+)_(begin|end)\((.*)\)/
+        # when /(?:\A\#@|\#@@)([a-z]+)_(begin|end)\((.*)\)/
           type = check_type($1)
           direction = $2
           spec = check_spec($3)
