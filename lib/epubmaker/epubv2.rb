@@ -229,7 +229,7 @@ EOT
         s << <<EOT
     <navPoint id="nav-#{nav_count}" playOrder="#{nav_count}">
       <navLabel>
-        <text>#{indent[level]}#{item.title}</text>
+        <text>#{indent[level]}#{CGI.escapeHTML(item.title)}</text>
       </navLabel>
       <content src="#{item.file}"/>
     </navPoint>
@@ -257,12 +257,14 @@ EOT
     end
 
     # Return cover content.
-    def cover
+    def cover(type=nil)
+      bodyext = type.nil? ? "" : " epub:type=\"#{type}\""
+
       s = common_header
       s << <<EOT
   <title>#{CGI.escapeHTML(@producer.params["title"])}</title>
 </head>
-<body>
+<body#{bodyext}>
 EOT
       if @producer.params["coverimage"].nil?
         s << <<EOT
@@ -454,7 +456,7 @@ EOT
       if !has_part.nil?
         @producer.contents.each do |item|
           item.level += 1 if item.chaptype == "part" || item.chaptype == "body"
-          item.notoc = true if (item.chaptype == "pre" || item.chaptype == "post") && !item.level.nil? && (item.level + 1 == toclevel)
+          item.notoc = true if (item.chaptype == "pre" || item.chaptype == "post") && !item.level.nil? && (item.level + 1 == toclevel) # FIXME: 部があるときに前後の処理が困難
         end
         toclevel += 1
       end
@@ -506,7 +508,7 @@ EOT
       @producer.contents.each do |item|
         next if !item.notoc.nil? || item.level.nil? || item.file.nil? || item.title.nil? || item.level > @producer.params["toclevel"].to_i
         is = indent == true ? "　" * item.level : ""
-        s << %Q[<li><a href="#{item.file}">#{is}#{item.title}</a></li>\n]
+        s << %Q[<li><a href="#{item.file}">#{is}#{CGI.escapeHTML(item.title)}</a></li>\n]
       end
       s << %Q[</#{type}>\n]
 
@@ -551,8 +553,8 @@ EOT
     end
 
     def export_zip(tmpdir, epubfile)
-      Dir.chdir(tmpdir) {|d| system("#{@producer.params["zip_stage1"]} #{epubfile} mimetype") }
-      Dir.chdir(tmpdir) {|d| system("#{@producer.params["zip_stage2"]} #{epubfile} META-INF OEBPS #{@producer.params["zip_addpath"]}") }
+      Dir.chdir(tmpdir) {|d| `#{@producer.params["zip_stage1"]} #{epubfile} mimetype` }
+      Dir.chdir(tmpdir) {|d| `#{@producer.params["zip_stage2"]} #{epubfile} META-INF OEBPS #{@producer.params["zip_addpath"]}` }
     end
 
     def legacy_cover_and_title_file(loadfile, writefile)

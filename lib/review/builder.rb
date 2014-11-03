@@ -42,9 +42,9 @@ module ReVIEW
       @chapter = chapter
       @location = location
       @output = StringIO.new
-      @book = ReVIEW.book
+      @book = @chapter.book if @chapter.present?
       @tabwidth = nil
-      if @book.config && @book.config["tabwidth"]
+      if @book && @book.config && @book.config["tabwidth"]
         @tabwidth = @book.config["tabwidth"]
       end
       builder_init_file
@@ -70,6 +70,10 @@ module ReVIEW
       @output.puts *s.map{|i|
         convert_outencoding(i, @book.config["outencoding"])
       }
+    end
+
+    def target_name
+      self.class.to_s.gsub(/ReVIEW::/, '').gsub(/Builder/, '').downcase
     end
 
     def list(lines, id, caption)
@@ -186,7 +190,7 @@ module ReVIEW
     end
 
     def inline_title(id)
-      @chapter.env.chapter_index.title(id)
+      compile_inline @chapter.env.chapter_index.title(id)
     rescue KeyError
       error "unknown chapter: #{id}"
       nofunc_text("[UnknownChapter:#{id}]")
@@ -273,7 +277,7 @@ module ReVIEW
     def raw(str)
       if matched = str.match(/\|(.*?)\|(.*)/)
         builders = matched[1].split(/,/).map{|i| i.gsub(/\s/, '') }
-        c = self.class.to_s.gsub(/ReVIEW::/, '').gsub(/Builder/, '').downcase
+        c = target_name
         if builders.include?(c)
           print matched[2].gsub("\\n", "\n")
         else
@@ -347,7 +351,7 @@ module ReVIEW
     end
 
     def graph(lines, id, command, caption = nil)
-      c = self.class.to_s.gsub(/ReVIEW::/, '').gsub(/Builder/, '').downcase
+      c = target_name
       dir = File.join(@book.basedir, @book.image_dir, c)
       Dir.mkdir(dir) unless File.exist?(dir)
       file = "#{id}.#{image_ext}"
@@ -366,6 +370,7 @@ module ReVIEW
       cmd = cmds[command.to_sym]
       warn cmd
       system cmd
+      @chapter.image_index.image_finder.add_entry(file_path)
 
       image(lines, id, caption ||= "")
     end

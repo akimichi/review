@@ -63,7 +63,10 @@ module ReVIEW
     private :builder_init_file
 
     def result
-      layout_file = File.join(@book.basedir, "layouts", "layout.erb")
+      layout_file = File.join(@book.basedir, "layouts", "layout.html.erb")
+      unless File.exist?(layout_file) # backward compatibility
+        layout_file = File.join(@book.basedir, "layouts", "layout.erb")
+      end
       if File.exist?(layout_file)
         if ENV["REVIEW_SAFE_MODE"].to_i & 4 > 0
           warn "user's layout is prohibited in safe mode. ignored."
@@ -100,21 +103,21 @@ module ReVIEW
 
       # default XHTML header/footer
       header = <<EOT
-<?xml version="1.0" encoding="#{@book.config["outencoding"] || :UTF-8}"?>
+<?xml version="1.0" encoding="#{@book.config["outencoding"] || "UTF-8"}"?>
 EOT
       if @book.config["htmlversion"].to_i == 5
         header += <<EOT
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:#{xmlns_ops_prefix}="http://www.idpf.org/2007/ops" xml:lang="#{@book.config["language"]}">
 <head>
-  <meta charset="#{@book.config["outencoding"] || :UTF-8}" />
+  <meta charset="#{@book.config["outencoding"] || "UTF-8"}" />
 EOT
       else
         header += <<EOT
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:ops="http://www.idpf.org/2007/ops" xml:lang="#{@book.config["language"]}">
 <head>
-  <meta http-equiv="Content-Type" content="text/html;charset=#{@book.config["outencoding"] || :UTF-8}" />
+  <meta http-equiv="Content-Type" content="text/html;charset=#{@book.config["outencoding"] || "UTF-8"}" />
   <meta http-equiv="Content-Style-Type" content="text/css" />
 EOT
       end
@@ -502,7 +505,9 @@ EOT
 
     def emlist(lines, caption = nil)
       puts %Q[<div class="emlist-code">]
-      puts %Q(<p class="caption">#{caption}</p>) unless caption.nil?
+      if caption.present?
+        puts %Q(<p class="caption">#{compile_inline(caption)}</p>)
+      end
       print %Q[<pre class="emlist">]
       lines.each do |line|
         puts detab(line)
@@ -513,7 +518,9 @@ EOT
 
     def emlistnum(lines, caption = nil)
       puts %Q[<div class="emlistnum-code">]
-      puts %Q(<p class="caption">#{caption}</p>) unless caption.nil?
+      if caption.present?
+        puts %Q(<p class="caption">#{compile_inline(caption)}</p>)
+      end
       print %Q[<pre class="emlist">]
       lines.each_with_index do |line, i|
         puts detab((i+1).to_s.rjust(2) + ": " + line)
@@ -524,7 +531,9 @@ EOT
 
     def cmd(lines, caption = nil)
       puts %Q[<div class="cmd-code">]
-      puts %Q(<p class="caption">#{caption}</p>) unless caption.nil?
+      if caption.present?
+        puts %Q(<p class="caption">#{compile_inline(caption)}</p>)
+      end
       print %Q[<pre class="cmd">]
       lines.each do |line|
         puts detab(line)
@@ -807,10 +816,11 @@ QUOTE
     end
 
     def inline_title(id)
+      title = super
       if @book.config["chapterlink"]
-        %Q(<a href="./#{id}#{extname}">#{compile_inline(@chapter.env.chapter_index.title(id))}</a>)
+        %Q(<a href="./#{id}#{extname}">#{title}</a>)
       else
-        @chapter.env.chapter_index.title(id)
+        title
       end
     rescue KeyError
       error "unknown chapter: #{id}"
@@ -900,8 +910,11 @@ QUOTE
 
     def inline_m(str)
       if @book.config["mathml"]
-        p = MathML::LaTeX::Parser.new(:symbol=>MathML::Symbol::CharacterReference)
-        %Q[<span class="equation">#{p.parse(str, nil)}</span>]
+        require 'math_ml'
+        require 'math_ml/symbol/character_reference'
+        parser = MathML::LaTeX::Parser.new(
+          :symbol => MathML::Symbol::CharacterReference)
+        %Q[<span class="equation">#{parser.parse(str, nil)}</span>]
       else
         %Q[<span class="equation">#{escape_html(str)}</span>]
       end
@@ -932,7 +945,7 @@ QUOTE
     end
 
     def inline_bib(id)
-      %Q(<a href=".#{@book.bib_file.gsub(/re\Z/, "html")}#bib-#{normalize_id(id)}">[#{@chapter.bibpaper(id).number}]</a>)
+      %Q(<a href="#{@book.bib_file.gsub(/re\Z/, "html")}#bib-#{normalize_id(id)}">[#{@chapter.bibpaper(id).number}]</a>)
     end
 
     def inline_hd_chap(chap, id)

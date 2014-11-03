@@ -232,9 +232,13 @@ EOT
     filename = ""
 
     chaptype = "body"
-    chaptype = "part" unless ispart.nil?
-    chaptype = "pre" if chap.on_PREDEF?
-    chaptype = "post" if chap.on_POSTDEF?
+    if !ispart.nil?
+      chaptype = "part"
+    elsif chap.on_PREDEF?
+      chaptype = "pre"
+    elsif chap.on_APPENDIX?
+      chaptype = "post"
+    end
 
     if !ispart.nil?
       filename = chap.path
@@ -247,7 +251,7 @@ EOT
       if chap.on_PREDEF?
         @precount += 1
         id = sprintf("pre%02d", @precount)
-      elsif chap.on_POSTDEF?
+      elsif chap.on_APPENDIX?
         @postcount += 1
         id = sprintf("post%02d", @postcount)
       else
@@ -269,7 +273,7 @@ EOT
 #      level = @params["part_secnolevel"]
 #    else
 #      level = @params["pre_secnolevel"] if chap.on_PREDEF?
-#      level = @params["post_secnolevel"] if chap.on_POSTDEF?
+#      level = @params["post_secnolevel"] if chap.on_APPENDIX?
 #    end
 
     stylesheet = ""

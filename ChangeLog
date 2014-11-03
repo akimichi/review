@@ -1,3 +1,36 @@
+Wed Oct 29 18:54:28 2014  KADO Masanori  <kdmsnr@gmail.com>
+
+	* Release 1.4.0.
+
+Thu Sep 18 13:48:24 2014  KADO Masanori  <kdmsnr@gmail.com>
+
+	* bin/review-init, doc/format.rdoc, lib/review/htmlbuilder.rb, lib/review/pdfmaker.rb, lib/review/tocprinter.rb, lib/review/review.tex.erb: change the name of layout template files to "layout.html.erb" and "layout.tex.erb"
+
+Wed Aug 20 17:15:04 2014  Masayoshi Takahashi  <takahashimm@gmail.com>
+
+	* lib/review/book/chapter.rb: remove unused method Chapter.for_stdin and Chapter.for_path
+
+Wed Aug 20 01:51:02 2014  Masayoshi Takahashi  <takahashimm@gmail.com>
+
+	* lib/review/book/parameters.rb: remove ReVIEW::Book::Parameters
+
+Wed Aug 20 00:30:07 2014  Masayoshi Takahashi  <takahashimm@gmail.com>
+
+	* lib/review/book/parameters.rb, lib/review/book/base.rb,
+	  test/test_book.rb, test/test_book_parameter.rb:
+
+	  remove unused method: ReVIEW::Book::Parameters.default and ReVIEW::Book::Parameters.load
+
+Thu Aug  7 16:25:23 2014  KADO Masanori  <kdmsnr@gmail.com>
+
+	* lib/review/book/base.rb (Base#prefaces, postscripts):
+	  remove implicit prefaces and postscripts.
+
+Wed Aug  6 18:55:31 2014  KADO Masanori  <kdmsnr@gmail.com>
+
+	* bin/review-catalog-converter: add review-catalog-converter for
+	  converting old style catalog files into a new style catalog.yml file.
+
 Thu Jul 31 15:05:34 2014  Kenshi Muto  <kmuto@debian.org>
 
 	* lib/review/htmlbuilder.rb, lib/review/idgxmlbuilder.rb: 
