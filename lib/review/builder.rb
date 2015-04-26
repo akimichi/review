@@ -365,7 +365,7 @@ module ReVIEW
         " set output \"#{file_path}\"\n#{line}' | gnuplot",
         :blockdiag => "echo '#{line}' "+
         "| blockdiag -a -T #{image_ext} -o #{file_path} /dev/stdin",
-        :ditta => "echo '#{line}' > /tmp/ditta.in ; ditaa /tmp/ditta.in  #{file_path} -o > /dev/null",
+        :ditaa => "echo '#{line}' > /tmp/ditaa.in ; ditaa /tmp/ditaa.in  #{file_path} -o --scale 0.6 > /dev/null",
         :aafigure => "echo '#{line}' | aafigure -t#{image_ext} -o#{file_path}",
       }
       cmd = cmds[command.to_sym]
