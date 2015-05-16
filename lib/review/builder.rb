@@ -1,6 +1,6 @@
 # encoding: utf-8
 #
-# Copyright (c) 2002-2009 Minero Aoki
+# Copyright (c) 2002-2014 Minero Aoki, Kenshi Muto
 #
 # This program is free software.
 # You can distribute or modify this program under the terms of
@@ -11,6 +11,7 @@ require 'review/book/index'
 require 'review/exception'
 require 'review/textutils'
 require 'review/compiler'
+require 'review/sec_counter'
 require 'stringio'
 require 'cgi'
 
@@ -51,6 +52,7 @@ module ReVIEW
     end
 
     def builder_init_file
+      @sec_counter = SecCounter.new(5, @chapter)
     end
     private :builder_init_file
 
@@ -76,22 +78,30 @@ module ReVIEW
       self.class.to_s.gsub(/ReVIEW::/, '').gsub(/Builder/, '').downcase
     end
 
-    def list(lines, id, caption)
+    def headline_prefix(level)
+      @sec_counter.inc(level)
+      anchor = @sec_counter.anchor(level)
+      prefix = @sec_counter.prefix(level, @book.config["secnolevel"])
+      [prefix, anchor]
+    end
+    private :headline_prefix
+
+    def list(lines, id, caption, lang = nil)
       begin
-        list_header id, caption
+        list_header id, caption, lang
       rescue KeyError
         error "no such list: #{id}"
       end
-      list_body id, lines
+      list_body id, lines, lang
     end
 
-    def listnum(lines, id, caption)
+    def listnum(lines, id, caption, lang = nil)
       begin
-        list_header id, caption
+        list_header id, caption, lang
       rescue KeyError
         error "no such list: #{id}"
       end
-      listnum_body lines
+      listnum_body lines, lang
     end
 
     def source(lines, caption)
@@ -176,21 +186,21 @@ module ReVIEW
     end
 
     def inline_chapref(id)
-      compile_inline @chapter.env.chapter_index.display_string(id)
+      compile_inline @book.chapter_index.display_string(id)
     rescue KeyError
       error "unknown chapter: #{id}"
       nofunc_text("[UnknownChapter:#{id}]")
     end
 
     def inline_chap(id)
-      @chapter.env.chapter_index.number(id)
+      @book.chapter_index.number(id)
     rescue KeyError
       error "unknown chapter: #{id}"
       nofunc_text("[UnknownChapter:#{id}]")
     end
 
     def inline_title(id)
-      compile_inline @chapter.env.chapter_index.title(id)
+      compile_inline @book.chapter_index.title(id)
     rescue KeyError
       error "unknown chapter: #{id}"
       nofunc_text("[UnknownChapter:#{id}]")
@@ -208,6 +218,16 @@ module ReVIEW
     rescue KeyError
       error "unknown image: #{id}"
       nofunc_text("[UnknownImage:#{id}]")
+    end
+
+    def inline_imgref(id)
+      img = inline_img(id)
+
+      if @chapter.image(id).caption
+        "#{img}#{I18n.t('image_quote', @chapter.image(id).caption)}"
+      else
+        img
+      end
     end
 
     def inline_table(id)
@@ -324,7 +344,7 @@ module ReVIEW
 
     def get_chap(chapter = @chapter)
       if @book.config["secnolevel"] > 0 && !chapter.number.nil? && !chapter.number.to_s.empty?
-        return "#{chapter.number}"
+        return chapter.format_number(nil)
       end
       return nil
     end

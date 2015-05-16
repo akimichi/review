@@ -13,7 +13,6 @@ require 'review/builder'
 require 'review/htmlutils'
 require 'review/htmllayout'
 require 'review/textutils'
-require 'review/sec_counter'
 
 module ReVIEW
 
@@ -48,7 +47,6 @@ module ReVIEW
 
     def builder_init(no_error = false)
       @no_error = no_error
-      @column = 0
       @noindent = nil
       @ol_num = nil
     end
@@ -58,6 +56,7 @@ module ReVIEW
       @warns = []
       @errors = []
       @chapter.book.image_types = %w( .png .jpg .jpeg .gif .svg )
+      @column = 0
       @sec_counter = SecCounter.new(5, @chapter)
     end
     private :builder_init_file
@@ -192,16 +191,11 @@ EOT
       "</ul>\n"
     end
 
-    def headline_prefix(level)
-      @sec_counter.inc(level)
-      anchor = @sec_counter.anchor(level)
-      prefix = @sec_counter.prefix(level, @book.config["secnolevel"])
-      [prefix, anchor]
-    end
-    private :headline_prefix
-
     def headline(level, label, caption)
       prefix, anchor = headline_prefix(level)
+      unless prefix.nil?
+        prefix = %Q[<span class="secno">#{prefix}</span>]
+      end
       puts '' if level > 1
       a_id = ""
       unless anchor.nil?
@@ -434,18 +428,18 @@ EOT
 
     alias_method :lead, :read
 
-    def list(lines, id, caption)
+    def list(lines, id, caption, lang = nil)
       puts %Q[<div class="caption-code">]
       begin
-        list_header id, caption
+        list_header id, caption, lang
       rescue KeyError
         error "no such list: #{id}"
       end
-      list_body id, lines
+      list_body id, lines, lang
       puts '</div>'
     end
 
-    def list_header(id, caption)
+    def list_header(id, caption, lang)
       if get_chap.nil?
         puts %Q[<p class="caption">#{I18n.t("list")}#{I18n.t("format_number_header_without_chapter", [@chapter.list(id).number])}#{I18n.t("caption_prefix")}#{compile_inline(caption)}</p>]
       else
@@ -453,11 +447,11 @@ EOT
       end
     end
 
-    def list_body(id, lines)
+    def list_body(id, lines, lang)
       id ||= ''
       print %Q[<pre class="list">]
       body = lines.inject(''){|i, j| i + detab(j) + "\n"}
-      lexer = File.extname(id).gsub(/\./, '')
+      lexer = lang || File.extname(id).gsub(/\./, '')
       puts highlight(:body => body, :lexer => lexer, :format => 'html')
       puts '</pre>'
     end
@@ -484,48 +478,46 @@ EOT
       puts '</pre>'
     end
 
-    def listnum(lines, id, caption)
+    def listnum(lines, id, caption, lang = nil)
       puts %Q[<div class="code">]
       begin
-        list_header id, caption
+        list_header id, caption, lang
       rescue KeyError
         error "no such list: #{id}"
       end
-      listnum_body lines
+      listnum_body lines, lang
       puts '</div>'
     end
 
-    def listnum_body(lines)
-      print %Q[<pre class="list">]
-      lines.each_with_index do |line, i|
-        puts detab((i+1).to_s.rjust(2) + ": " + line)
-      end
-      puts '</pre>'
+    def listnum_body(lines, lang)
+      body = lines.inject(''){|i, j| i + detab(j) + "\n"}
+      lexer = lang
+      puts highlight(:body => body, :lexer => lexer, :format => 'html',
+                     :options => {:linenos => 'inline', :nowrap => false})
     end
 
-    def emlist(lines, caption = nil)
+    def emlist(lines, caption = nil, lang = nil)
       puts %Q[<div class="emlist-code">]
       if caption.present?
         puts %Q(<p class="caption">#{compile_inline(caption)}</p>)
       end
       print %Q[<pre class="emlist">]
-      lines.each do |line|
-        puts detab(line)
-      end
+      body = lines.inject(''){|i, j| i + detab(j) + "\n"}
+      lexer = lang
+      puts highlight(:body => body, :lexer => lexer, :format => 'html')
       puts '</pre>'
       puts '</div>'
     end
 
-    def emlistnum(lines, caption = nil)
+    def emlistnum(lines, caption = nil, lang = nil)
       puts %Q[<div class="emlistnum-code">]
       if caption.present?
         puts %Q(<p class="caption">#{compile_inline(caption)}</p>)
       end
-      print %Q[<pre class="emlist">]
-      lines.each_with_index do |line, i|
-        puts detab((i+1).to_s.rjust(2) + ": " + line)
-      end
-      puts '</pre>'
+      body = lines.inject(''){|i, j| i + detab(j) + "\n"}
+      lexer = lang
+      puts highlight(:body => body, :lexer => lexer, :format => 'html',
+                     :options => {:linenos => 'inline', :nowrap => false})
       puts '</div>'
     end
 
@@ -535,9 +527,9 @@ EOT
         puts %Q(<p class="caption">#{compile_inline(caption)}</p>)
       end
       print %Q[<pre class="cmd">]
-      lines.each do |line|
-        puts detab(line)
-      end
+      body = lines.inject(''){|i, j| i + detab(j) + "\n"}
+      lexer = 'shell-session'
+      puts highlight(:body => body, :lexer => lexer, :format => 'html')
       puts '</pre>'
       puts '</div>'
     end
@@ -594,6 +586,8 @@ QUOTE
     def texequation(lines)
       puts %Q[<div class="equation">]
       if @book.config["mathml"]
+        require 'math_ml'
+        require 'math_ml/symbol/character_reference'
         p = MathML::LaTeX::Parser.new(:symbol=>MathML::Symbol::CharacterReference)
         puts p.parse(unescape_html(lines.join("\n")), true)
       else
@@ -787,7 +781,7 @@ QUOTE
     end
 
     def inline_labelref(idref)
-      %Q[<a target='#{escape_html(idref)}'>「●●　#{escape_html(idref)}」</a>]
+      %Q[<a target='#{escape_html(idref)}'>「#{I18n.t("label_marker")}#{escape_html(idref)}」</a>]
     end
 
     alias_method :inline_ref, :inline_labelref
@@ -806,9 +800,9 @@ QUOTE
 
     def inline_chap(id)
       if @book.config["chapterlink"]
-        %Q(<a href="./#{id}#{extname}">#{@chapter.env.chapter_index.number(id)}</a>)
+        %Q(<a href="./#{id}#{extname}">#{@book.chapter_index.number(id)}</a>)
       else
-        @chapter.env.chapter_index.number(id)
+        @book.chapter_index.number(id)
       end
     rescue KeyError
       error "unknown chapter: #{id}"
@@ -951,9 +945,9 @@ QUOTE
     def inline_hd_chap(chap, id)
       n = chap.headline_index.number(id)
       if chap.number and @book.config["secnolevel"] >= n.split('.').size
-        str = "「#{n} #{compile_inline(chap.headline(id).caption)}」"
+        str = I18n.t("chapter_quote", "#{n} #{compile_inline(chap.headline(id).caption)}")
       else
-        str = "「#{compile_inline(chap.headline(id).caption)}」"
+        str = I18n.t("chapter_quote", compile_inline(chap.headline(id).caption))
       end
       if @book.config["chapterlink"]
         anchor = "h"+n.gsub(/\./, "-")
@@ -973,7 +967,7 @@ QUOTE
       if @book.config["chapterlink"]
         %Q(<a href="\##{column_label(id)}" class="columnref">#{I18n.t("column", escape_html(@chapter.column(id).caption))}</a>)
       else
-        escape_html(@chapter.column(id).caption)
+        I18n.t("column", escape_html(@chapter.column(id).caption))
       end
     rescue KeyError
       error "unknown column: #{id}"

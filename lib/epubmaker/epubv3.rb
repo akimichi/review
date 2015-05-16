@@ -1,7 +1,7 @@
 # encoding: utf-8
 # = epubv3.rb -- EPUB version 3 producer.
 #
-# Copyright (c) 2010-2014 Kenshi Muto
+# Copyright (c) 2010-2015 Kenshi Muto
 #
 # This program is free software.
 # You can distribute or modify this program under the terms of
@@ -9,56 +9,36 @@
 # For details of the GNU LGPL, see the file "COPYING".
 #
 
-require 'epubmaker/epubv2'
+require 'epubmaker/epubcommon'
 
 module EPUBMaker
 
   # EPUBv3 is EPUB version 3 producer.
-  class EPUBv3 < EPUBv2
-    def opf_guide
-      s = ""
-      s << %Q[  <guide>\n]
-      s << %Q[    <reference type="cover" title="#{@producer.res.v("covertitle")}" href="#{@producer.params["cover"]}"/>\n]
-      s << %Q[    <reference type="title-page" title="#{@producer.res.v("titlepagetitle")}" href="titlepage.#{@producer.params["htmlext"]}"/>\n] unless @producer.params["titlepage"].nil?
-      s << %Q[    <reference type="toc" title="#{@producer.res.v("toctitle")}" href="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}"/>\n]
-      s << %Q[    <reference type="colophon" title="#{@producer.res.v("colophontitle")}" href="colophon.#{@producer.params["htmlext"]}"/>\n] unless @producer.params["colophon"].nil?
-      s << %Q[  </guide>\n]
-      s
+  class EPUBv3 < EPUBCommon
+    # Construct object with parameter hash +params+ and message resource hash +res+.
+    def initialize(producer)
+      super
     end
 
-    def ncx(indentarray)
-      s = common_header
-      s << <<EOT
-  <title>#{@producer.res.v("toctitle")}</title>
-</head>
-<body>
-  <nav xmlns:epub="http://www.idpf.org/2007/ops" epub:type="toc" id="toc">
-  <h1 class="toc-title">#{@producer.res.v("toctitle")}</h1>
+    # Return opf file content.
+    def opf
+      s = <<EOT
+<?xml version="1.0" encoding="UTF-8"?>
+<package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" xml:lang="#{@producer.params["language"]}">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
 EOT
 
-      if @producer.params["flattoc"].nil?
-        s << hierarchy_ncx("ol")
-      else
-        s << flat_ncx("ol", @producer.params["flattocindent"])
-      end
-      s << <<EOT
-  </nav>
-</body>
-</html>
-EOT
+      s << opf_metainfo
+
+      s << %Q[  </metadata>\n]
+
+      s << opf_manifest
+      s << opf_tocx
+      s << opf_guide # same as ePUB2
+
+      s << %Q[</package>\n]
+
       s
-    end
-
-    # Produce EPUB file +epubfile+.
-    # +basedir+ points the directory has contents.
-    # +tmpdir+ defines temporary directory.
-    def produce(epubfile, basedir, tmpdir)
-      produce_write_common(basedir, tmpdir)
-
-      File.open("#{tmpdir}/OEBPS/#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}", "w") {|f| @producer.ncx(f, @producer.params["ncxindent"]) }
-
-      @producer.call_hook(@producer.params["hook_prepack"], tmpdir)
-      export_zip(tmpdir, epubfile)
     end
 
     def opf_metainfo
@@ -66,7 +46,9 @@ EOT
       %w[title language date type format source description relation coverage subject rights].each do |item|
         next if @producer.params[item].nil?
         if @producer.params[item].instance_of?(Array)
-          s << @producer.params[item].map.with_index {|v, i| %Q[    <dc:#{item} id="#{item}-#{i}">#{CGI.escapeHTML(v.to_s)}</dc:#{item}>\n]}.join
+          @producer.params[item].each_with_index {|v, i|
+            s << %Q[    <dc:#{item} id="#{item}-#{i}">#{CGI.escapeHTML(v.to_s)}</dc:#{item}>\n]
+          }
         else
           s << %Q[    <dc:#{item} id="#{item}">#{CGI.escapeHTML(@producer.params[item].to_s)}</dc:#{item}>\n]
         end
@@ -134,17 +116,17 @@ EOT
       s
     end
 
-    def opf_manifest(mathstr)
+    def opf_manifest
       s = ""
       s << <<EOT
   <manifest>
-    <item properties="nav#{mathstr.empty? ? '' : ' mathml'}" id="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}" href="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}" media-type="application/xhtml+xml"/>
+    <item properties="nav" id="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}" href="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}" media-type="application/xhtml+xml"/>
     <item id="#{@producer.params["bookname"]}" href="#{@producer.params["cover"]}" media-type="application/xhtml+xml"/>
 EOT
 
       if @producer.params["coverimage"]
         @producer.contents.each do |item|
-          if item.media =~ /\Aimage/ && item.file =~ /#{@producer.params["coverimage"]}\Z/
+          if item.media =~ /\Aimage/ && File.basename(item.file) == @producer.params["coverimage"]
             s << %Q[    <item properties="cover-image" id="cover-#{item.id}" href="#{item.file}" media-type="#{item.media}"/>\n]
             item.id = nil
             break
@@ -158,7 +140,7 @@ EOT
         if item.properties.size > 0
           propstr = %Q[ properties="#{item.properties.sort.uniq.join(" ")}"]
         end
-        s << %Q[    <item#{mathstr} id="#{item.id}" href="#{item.file}" media-type="#{item.media}"#{propstr}/>\n]
+        s << %Q[    <item id="#{item.id}" href="#{item.file}" media-type="#{item.media}"#{propstr}/>\n]
       end
       s << %Q[  </manifest>\n]
 
@@ -166,7 +148,7 @@ EOT
     end
 
     def opf_tocx
-      if @producer.params["cover_linear"] && @producer.params["cover_linear"] != "no"
+      if @producer.params["epubmaker"]["cover_linear"] && @producer.params["epubmaker"]["cover_linear"] != "no"
         cover_linear = "yes"
       else
         cover_linear = "no"
@@ -175,7 +157,7 @@ EOT
       s = ""
       s << %Q[  <spine>\n]
       s << %Q[    <itemref idref="#{@producer.params["bookname"]}" linear="#{cover_linear}"/>\n]
-#      s << %Q[    <itemref idref="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}" />\n]
+      s << %Q[    <itemref idref="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}" />\n] if @producer.params["toc"]
 
       @producer.contents.each do |item|
         next if item.media !~ /xhtml\+xml/ # skip non XHTML
@@ -186,26 +168,50 @@ EOT
       s
     end
 
-    # Return opf file content.
-    def opf
-      mathstr = @producer.params["mathml"].nil? ? "" : %Q[ properties="mathml"]
-      s = <<EOT
-<?xml version="1.0" encoding="UTF-8"?>
-<package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" xml:lang="#{@producer.params["language"]}">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    def opf_guide
+      s = ""
+      s << %Q[  <guide>\n]
+      s << %Q[    <reference type="cover" title="#{@producer.res.v("covertitle")}" href="#{@producer.params["cover"]}"/>\n]
+      s << %Q[    <reference type="title-page" title="#{@producer.res.v("titlepagetitle")}" href="titlepage.#{@producer.params["htmlext"]}"/>\n] unless @producer.params["titlepage"].nil?
+      s << %Q[    <reference type="toc" title="#{@producer.res.v("toctitle")}" href="#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}"/>\n]
+      s << %Q[    <reference type="colophon" title="#{@producer.res.v("colophontitle")}" href="colophon.#{@producer.params["htmlext"]}"/>\n] unless @producer.params["colophon"].nil?
+      s << %Q[  </guide>\n]
+      s
+    end
+
+    def ncx(indentarray)
+      s = common_header
+      s << <<EOT
+  <title>#{@producer.res.v("toctitle")}</title>
+</head>
+<body>
+  <nav xmlns:epub="http://www.idpf.org/2007/ops" epub:type="toc" id="toc">
+  <h1 class="toc-title">#{@producer.res.v("toctitle")}</h1>
 EOT
 
-      s << opf_metainfo
-
-      s << %Q[  </metadata>\n]
-
-      s << opf_manifest(mathstr)
-      s << opf_tocx
-      s << opf_guide # same as ePUB2
-
-      s << %Q[</package>\n]
-
+      if @producer.params["epubmaker"]["flattoc"].nil?
+        s << hierarchy_ncx("ol")
+      else
+        s << flat_ncx("ol", @producer.params["epubmaker"]["flattocindent"])
+      end
+      s << <<EOT
+  </nav>
+</body>
+</html>
+EOT
       s
+    end
+
+    # Produce EPUB file +epubfile+.
+    # +basedir+ points the directory has contents.
+    # +tmpdir+ defines temporary directory.
+    def produce(epubfile, basedir, tmpdir)
+      produce_write_common(basedir, tmpdir)
+
+      File.open("#{tmpdir}/OEBPS/#{@producer.params["bookname"]}-toc.#{@producer.params["htmlext"]}", "w") {|f| @producer.ncx(f, @producer.params["epubmaker"]["ncxindent"]) }
+
+      @producer.call_hook(@producer.params["epubmaker"]["hook_prepack"], tmpdir)
+      export_zip(tmpdir, epubfile)
     end
 
     private

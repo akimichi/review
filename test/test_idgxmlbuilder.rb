@@ -25,6 +25,7 @@ class IDGXMLBuidlerTest < Test::Unit::TestCase
     @chapter = Book::Chapter.new(@book, 1, '-', nil, StringIO.new)
     location = Location.new(nil, nil)
     @builder.bind(@compiler, @chapter, location)
+    I18n.setup("ja")
   end
 
   def test_headline_level1
@@ -136,12 +137,12 @@ class IDGXMLBuidlerTest < Test::Unit::TestCase
 
   def test_inline_ttb
     actual = compile_inline("@<ttb>{test * <>\"}")
-    assert_equal %Q|<tt style='bold'>test * &lt;&gt;&quot;</tt><index value='test ESCAPED_ASTERISK &lt;&gt;&quot;' />|, actual
+    assert_equal %Q|<tt style='bold'>test * &lt;&gt;&quot;</tt>|, actual
   end
 
   def test_inline_ttbold
     actual = compile_inline("@<ttbold>{test * <>\"}")
-    assert_equal %Q|<tt style='bold'>test * &lt;&gt;&quot;</tt><index value='test ESCAPED_ASTERISK &lt;&gt;&quot;' />|, actual
+    assert_equal %Q|<tt style='bold'>test * &lt;&gt;&quot;</tt>|, actual
   end
 
   def test_inline_balloon
@@ -549,6 +550,31 @@ EOS
   def test_inline_raw5
     assert_equal "nor\nmal", compile_inline("@<raw>{|idgxml|nor\\nmal}")
   end
+
+  def test_inline_imgref
+    def @chapter.image(id)
+      item = Book::ImageIndex::Item.new("sampleimg", 1, 'sample photo')
+      item.instance_eval{@path="./images/chap1-sampleimg.png"}
+      item
+    end
+
+    actual = compile_block "@<imgref>{sampleimg}\n"
+    expected = "<p><span type='image'>図1.1「sample photo」</span></p>"
+    assert_equal expected, actual
+  end
+
+  def test_inline_imgref2
+    def @chapter.image(id)
+      item = Book::NumberlessImageIndex::Item.new("sampleimg", 1)
+      item.instance_eval{@path="./images/chap1-sampleimg.png"}
+      item
+    end
+
+    actual = compile_block "@<imgref>{sampleimg}\n"
+    expected = "<p><span type='image'>図1.1</span></p>"
+    assert_equal expected, actual
+  end
+
 
   def test_block_raw0
     actual = compile_block("//raw[<>!\"\\n& ]\n")

@@ -66,6 +66,7 @@ module ReVIEW
       @subsection = 0
       @subsubsection = 0
       @subsubsubsection = 0
+      @sec_counter = SecCounter.new(5, @chapter)
       @column = 0
       @noindent = nil
       @rootelement = "doc"
@@ -73,7 +74,6 @@ module ReVIEW
       @tsize = nil
       @texblockequation = 0
       @texinlineequation = 0
-
       print %Q(<?xml version="1.0" encoding="UTF-8"?>\n)
       print %Q(<#{@rootelement} xmlns:aid="http://ns.adobe.com/AdobeInDesign/4.0/">)
       if @book.config["nolf"].present?
@@ -142,7 +142,6 @@ module ReVIEW
     end
 
     def headline(level, label, caption)
-      prefix = ""
       case level
       when 1
         unless @secttags.nil?
@@ -154,19 +153,6 @@ module ReVIEW
 
         print %Q(<chapter id="chap:#{@chapter.number}">) unless @secttags.nil?
 
-        if @chapter.number.blank?
-          prefix = ""
-        else
-          placeholder = if @chapter.is_a? ReVIEW::Book::Part
-                          level = 0
-                          'part'
-                        elsif @chapter.on_APPENDIX?
-                          'appendix'
-                        else
-                          'chapter'
-                        end
-          prefix = "#{I18n.t(placeholder, @chapter.number)}#{I18n.t("chapter_postfix")}"
-        end
         @section = 0
         @subsection = 0
         @subsubsection = 0
@@ -180,14 +166,7 @@ module ReVIEW
         end
         @section += 1
         print %Q(<sect id="sect:#{@chapter.number}.#{@section}">) unless @secttags.nil?
-        if @book.config["secnolevel"] >= 2
-          if @chapter.number.blank? or @chapter.on_APPENDIX?
-            prefix = ""
-          else
-            prefix = "#{@chapter.number}.#{@section}#{I18n.t("chapter_postfix")}"
-          end
-        end
-
+      
         @subsection = 0
         @subsubsection = 0
         @subsubsubsection = 0
@@ -200,13 +179,6 @@ module ReVIEW
 
         @subsection += 1
         print %Q(<sect2 id="sect:#{@chapter.number}.#{@section}.#{@subsection}">) unless @secttags.nil?
-        if @book.config["secnolevel"] >= 3
-          if @chapter.number.blank? or @chapter.on_APPENDIX?
-            prefix = ""
-          else
-            prefix = "#{@chapter.number}.#{@section}.#{@subsection}#{I18n.t("chapter_postfix")}"
-          end
-        end
 
         @subsubsection = 0
         @subsubsubsection = 0
@@ -218,13 +190,6 @@ module ReVIEW
 
         @subsubsection += 1
         print %Q(<sect3 id="sect:#{@chapter.number}.#{@section}.#{@subsection}.#{@subsubsection}">) unless @secttags.nil?
-        if @book.config["secnolevel"] >= 4
-          if @chapter.number.blank? or @chapter.on_APPENDIX?
-            prefix = ""
-          else
-            prefix = "#{@chapter.number}.#{@section}.#{@subsection}.#{@subsubsection}#{I18n.t("chapter_postfix")}"
-          end
-        end
 
         @subsubsubsection = 0
       when 5
@@ -234,19 +199,12 @@ module ReVIEW
 
         @subsubsubsection += 1
         print %Q(<sect4 id="sect:#{@chapter.number}.#{@section}.#{@subsection}.#{@subsubsection}.#{@subsubsubsection}">) unless @secttags.nil?
-        if @book.config["secnolevel"] >= 5
-          if @chapter.number.blank? or @chapter.on_APPENDIX?
-            prefix = ""
-          else
-            prefix = "#{@chapter.number}.#{@section}.#{@subsection}.#{@subsubsection}.#{@subsubsubsection}#{I18n.t("chapter_postfix")}"
-          end
-        end
-
       else
         raise "caption level too deep or unsupported: #{level}"
       end
 
-      prefix = "" if (level.to_i > @book.config["secnolevel"])
+      prefix, anchor = headline_prefix(level)
+
       label = label.nil? ? "" : " id=\"#{label}\""
       toccaption = escape_html(compile_inline(caption.gsub(/@<fn>\{.+?\}/, '')).gsub(/<[^>]+>/, ''))
       puts %Q(<title#{label} aid:pstyle="h#{level}">#{prefix}#{compile_inline(caption)}</title><?dtp level="#{level}" section="#{prefix}#{toccaption}"?>)
@@ -378,7 +336,7 @@ module ReVIEW
       end
     end
 
-    def list_header(id, caption)
+    def list_header(id, caption, lang)
       puts %Q[<codelist>]
       if get_chap.nil?
         puts %Q[<caption>#{I18n.t("list")}#{I18n.t("format_number_without_chapter", [@chapter.list(id).number])}#{I18n.t("caption_prefix_idgxml")}#{compile_inline(caption)}</caption>]
@@ -403,17 +361,17 @@ module ReVIEW
       end
     end
 
-    def list_body(id, lines)
+    def list_body(id, lines, lang)
       print %Q(<pre>)
       codelines_body(lines)
       puts "</pre></codelist>"
     end
 
-    def emlist(lines, caption = nil)
+    def emlist(lines, caption = nil, lang = nil)
       quotedlist lines, 'emlist', caption
     end
 
-    def emlistnum(lines, caption = nil)
+    def emlistnum(lines, caption = nil, lang = nil)
       _lines = []
       lines.each_with_index do |line, i|
         _lines << detab("<span type='lineno'>" + (i + 1).to_s.rjust(2) + ": </span>" + line)
@@ -421,7 +379,7 @@ module ReVIEW
       quotedlist _lines, 'emlistnum', caption
     end
 
-    def listnum_body(lines)
+    def listnum_body(lines, lang)
       print %Q(<pre>)
       no = 1
       lines.each_with_index do |line, i|
@@ -488,6 +446,19 @@ module ReVIEW
         "<span type='image'>#{I18n.t("image")}#{I18n.t("format_number_without_chapter", [chapter.image(id).number])}</span>"
       else
         "<span type='image'>#{I18n.t("image")}#{I18n.t("format_number", [get_chap(chapter), chapter.image(id).number])}</span>"
+      end
+    end
+
+    def inline_imgref(id)
+      chapter, id = extract_chapter_id(id)
+      if chapter.image(id).caption.blank?
+        inline_img(id)
+      else
+        if get_chap(chapter).nil?
+          "<span type='image'>#{I18n.t("image")}#{I18n.t("format_number_without_chapter", [chapter.image(id).number])}#{I18n.t('image_quote', chapter.image(id).caption)}</span>"
+        else
+          "<span type='image'>#{I18n.t("image")}#{I18n.t("format_number", [get_chap(chapter), chapter.image(id).number])}#{I18n.t('image_quote', chapter.image(id).caption)}</span>"
+        end
       end
     end
 
@@ -758,8 +729,7 @@ module ReVIEW
     end
 
     def inline_ttb(str)
-      index = escape_html(str).gsub(/<.*?>/, "").gsub(/\*/, "ESCAPED_ASTERISK").gsub(/'/, "&#27;")
-      %Q(<tt style='bold'>#{escape_html(str)}</tt><index value='#{index}' />)
+      %Q(<tt style='bold'>#{escape_html(str)}</tt>)
     end
 
     alias_method :inline_ttbold, :inline_ttb
@@ -790,7 +760,7 @@ module ReVIEW
     end
 
     def inline_labelref(idref)
-      %Q[<ref idref='#{escape_html(idref)}'>「●●　#{escape_html(idref)}」</ref>] # FIXME:節名とタイトルも込みで要出力
+      %Q[<ref idref='#{escape_html(idref)}'>「#{I18n.t("label_marker")}#{escape_html(idref)}」</ref>] # FIXME:節名とタイトルも込みで要出力
     end
 
     alias_method :inline_ref, :inline_labelref
@@ -1134,7 +1104,7 @@ module ReVIEW
         end
       else
       end
-      s = "#{chs[0]}#{@chapter.env.chapter_index.number(id)}#{chs[1]}#{@chapter.env.chapter_index.title(id)}#{chs[2]}"
+      s = "#{chs[0]}#{@book.chapter_index.number(id)}#{chs[1]}#{@book.chapter_index.title(id)}#{chs[2]}"
       if @book.config["chapterlink"]
         %Q(<link href="#{id}">#{s}</link>)
       else
@@ -1147,9 +1117,9 @@ module ReVIEW
 
     def inline_chap(id)
       if @book.config["chapterlink"]
-        %Q(<link href="#{id}">#{@chapter.env.chapter_index.number(id)}</link>)
+        %Q(<link href="#{id}">#{@book.chapter_index.number(id)}</link>)
       else
-        @chapter.env.chapter_index.number(id)
+        @book.chapter_index.number(id)
       end
     rescue KeyError
       error "unknown chapter: #{id}"
@@ -1204,10 +1174,10 @@ module ReVIEW
       if chap.number
         n = chap.headline_index.number(id)
         if @book.config["secnolevel"] >= n.split('.').size
-          return "「#{n}　#{compile_inline(chap.headline(id).caption)}」"
+          return I18n.t("chapter_quote", "#{n}　#{compile_inline(chap.headline(id).caption)}")
         end
       end
-      "「#{compile_inline(chap.headline(id).caption)}」"
+      I18n.t("chapter_quote", compile_inline(chap.headline(id).caption))
     end
 
     def inline_recipe(id)

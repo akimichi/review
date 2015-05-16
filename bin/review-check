@@ -37,7 +37,7 @@ def main
     "inencoding" => "UTF-8",
     "outencoding" => "UTF-8"
   })
-  @book = ReVIEW::Book::Base.load_default
+  @book = ReVIEW::Book::Base.load
   @book.config = @config
 
   modes = nil
@@ -54,7 +54,7 @@ def main
     files = @book.chapters.map {|ent| ent.path }
   }
   opts.on('-s', '--section N', 'Check section N. (deprecated)') {|n|
-    ents = ReVIEW.env.parts[Integer(n) - 1] or
+    ents = @book.parts[Integer(n) - 1] or
         raise ReVIEW::ApplicationError, "section #{n} not exist"
     files = ents.map {|ent| ent.path }
   }

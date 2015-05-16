@@ -20,10 +20,16 @@ require 'review/version'
 def main
   opts = OptionParser.new
   opts.version = ReVIEW::VERSION
-  opts.banner = "Usage: #{File.basename($0)} dirname"
+  opts.banner = "Usage: #{File.basename($0)} [option] dirname"
   opts.on('-h', '--help', 'print this message and quit.') {
     puts opts.help
     exit 0
+  }
+  opts.on('-f', '--force', 'generate files (except *.re) if directory has already existed.') {
+    @force = true
+  }
+  opts.on('-l', '--locale', 'generate locale.yml file.') {
+    @locale = true
   }
   begin
     opts.parse!
@@ -50,12 +56,13 @@ def main
     generate_style(dir)
     generate_texmacro(dir)
     generate_config(dir)
+    generate_locale(dir) if @locale
     generate_rakefile(dir)
   end
 end
 
 def generate_dir(dir)
-  if File.exist? dir
+  if File.exist?(dir) && !@force
     puts "#{dir} already exists."
     exit
   end
@@ -64,13 +71,15 @@ def generate_dir(dir)
 end
 
 def generate_sample(dir)
-  File.open("#{dir}/#{File.basename(dir)}.re", "w") do |file|
-    file.write("= ")
+  if !@force
+    File.open("#{dir}/#{File.basename(dir)}.re", "w") do |file|
+      file.write("= ")
+    end
   end
 end
 
 def generate_layout(dir)
-  Dir.mkdir dir + '/layouts'
+  FileUtils.mkdir_p dir + '/layouts'
   File.open("#{dir}/layouts/layout.html.erb", "w") do |file|
     file.write <<-EOS
 <?xml version="1.0" encoding="UTF-8"?>
@@ -108,7 +117,7 @@ EOS
 end
 
 def generate_images_dir(dir)
-  Dir.mkdir dir + '/images'
+  FileUtils.mkdir_p dir + '/images'
 end
 
 def generate_cover_image(dir)
@@ -125,12 +134,16 @@ end
 
 def generate_texmacro(dir)
   texmacrodir = dir + '/sty'
-  Dir.mkdir texmacrodir
+  FileUtils.mkdir_p texmacrodir
   FileUtils.cp @review_dir + "/test/sample-book/src/sty/reviewmacro.sty", texmacrodir
 end
 
 def generate_rakefile(dir)
   FileUtils.cp @review_dir + "/test/sample-book/src/Rakefile", dir
+end
+
+def generate_locale(dir)
+  FileUtils.cp @review_dir + '/lib/review/i18n.yml', dir + '/locale.yml'
 end
 
 if File.basename($0) == File.basename(__FILE__)

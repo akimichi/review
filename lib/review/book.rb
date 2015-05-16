@@ -12,8 +12,6 @@
 
 require 'review/exception'
 require 'review/extentions'
-require 'forwardable'
-require 'nkf'
 
 require 'review/book/base'
 require 'review/book/chapter'
@@ -26,7 +24,7 @@ module ReVIEW
   @default_book = nil
 
   def ReVIEW.book
-    @default_book ||= Book::Base.load_default
+    @default_book ||= Book::Base.load
   end
 
   module Book

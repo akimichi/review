@@ -19,17 +19,11 @@ module ReVIEW
       attr_writer :config
 
       def self.load_default
-        basedir = "."
-        if File.file?("#{basedir}/CHAPS") ||
-            File.file?("#{basedir}/catalog.yml")
-          book = load(basedir)
-          book
-        else
-          new(basedir)
-        end
+        warn 'Book::Base.load_default() is obsoleted. Use Book::Base.load().'
+        load()
       end
 
-      def self.load(dir)
+      def self.load(dir = ".")
         update_rubyenv dir
         new(dir)
       end
@@ -81,7 +75,13 @@ module ReVIEW
       end
 
       def page_metric
-        config["page_metric"]
+        if config["page_metric"].respond_to?(:downcase) && config["page_metric"].upcase =~ /^[A-Z0-9_]+$/
+          ReVIEW::Book::PageMetric.const_get(config["page_metric"].upcase)
+        elsif config["page_metric"].kind_of?(Array) && config["page_metric"].size == 5
+          ReVIEW::Book::PageMetric.new(*config["page_metric"])
+        else
+          config["page_metric"]
+        end
       end
 
       def parts
@@ -149,7 +149,9 @@ module ReVIEW
       end
 
       def volume
-        Volume.sum(chapters.map {|chap| chap.volume })
+        vol = Volume.sum(chapters.map {|chap| chap.volume })
+        vol.page_per_kbyte = page_metric.page_per_kbyte
+        vol
       end
 
       def config
@@ -159,6 +161,11 @@ module ReVIEW
       # backward compatible
       def param=(param)
         @config = param
+      end
+
+      def load_config(filename)
+        new_conf = YAML.load_file(filename)
+        @config.merge!(new_conf)
       end
 
       # backward compatible

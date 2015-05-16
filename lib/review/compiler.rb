@@ -11,7 +11,7 @@
 require 'review/extentions'
 require 'review/preprocessor'
 require 'review/exception'
-require 'lineinput'
+require 'strscan'
 
 module ReVIEW
 
@@ -130,15 +130,15 @@ module ReVIEW
 
     defblock :read, 0
     defblock :lead, 0
-    defblock :list, 2
-    defblock :emlist, 0..1
+    defblock :list, 2..3
+    defblock :emlist, 0..2
     defblock :cmd, 0..1
     defblock :table, 0..2
     defblock :quote, 0
     defblock :image, 2..3, true
     defblock :source, 0..1
-    defblock :listnum, 2
-    defblock :emlistnum, 0..1
+    defblock :listnum, 2..3
+    defblock :emlistnum, 0..2
     defblock :bibpaper, 2..3, true
     defblock :doorquote, 1
     defblock :talk, 0
@@ -172,6 +172,7 @@ module ReVIEW
     definline :chap
     definline :title
     definline :img
+    definline :imgref
     definline :icon
     definline :list
     definline :table
@@ -407,6 +408,7 @@ module ReVIEW
         @strategy.dt text(f.gets.sub(/\A\s*:/, '').strip)
         @strategy.dd f.break(/\A(\S|\s*:)/).map {|line| text(line.strip) }
         f.skip_blank_lines
+        f.skip_comment_lines
       end
       @strategy.dl_end
     end

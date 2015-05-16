@@ -61,7 +61,60 @@ EOS
 
   def test_cmd
     actual = compile_block("//cmd{\nlineA\nlineB\n//}\n")
-    assert_equal "```\nlineA\nlineB\n```\n", actual
+    assert_equal "```shell-session\nlineA\nlineB\n```\n", actual
+  end
+
+  def test_list
+    actual = compile_block(<<-EOS)
+//list[name][caption]{
+AAA
+BBB
+//}
+    EOS
+
+    assert_equal <<-EOS, actual
+リスト1.1 caption
+```
+AAA
+BBB
+```
+    EOS
+  end
+
+  def test_list_lang
+    actual = compile_block(<<-EOS)
+//list[name][caption][ruby]{
+AAA
+BBB
+//}
+    EOS
+
+    assert_equal <<-EOS, actual
+リスト1.1 caption
+```ruby
+AAA
+BBB
+```
+    EOS
+  end
+
+  def test_emlist_lang
+    actual = compile_block(<<-EOS)
+//emlist[caption][ruby]{
+AAA
+BBB
+//}
+    EOS
+
+    assert_equal <<-EOS, actual
+
+caption
+```ruby
+AAA
+BBB
+```
+
+    EOS
   end
 
   def test_table

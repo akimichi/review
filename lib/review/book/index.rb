@@ -12,6 +12,7 @@
 require 'review/extentions'
 require 'review/exception'
 require 'review/book/image_finder'
+require 'review/i18n'
 
 module ReVIEW
   module Book
@@ -56,11 +57,22 @@ module ReVIEW
       def [](id)
         @index.fetch(id)
       rescue
+        if @index.keys.map{|i| i.split(/\|/).last }.flatten. # unfold all ids
+            reduce(Hash.new(0)){|h, i| h[i] += 1; h}.  # number of occurrences
+            select{|k, v| k == id && v > 1 }.present? # detect duplicated
+          raise KeyError, "key '#{id}' is ambiguous for #{self.class}"
+        end
+
+        @items.each do |i|
+          if i.id.split(/\|/).include?(id)
+            return i
+          end
+        end
         raise KeyError, "not found key '#{id}' for #{self.class}"
       end
 
       def number(id)
-        @index.fetch(id).number.to_s
+        self[id].number.to_s
       end
 
       def each(&block)
@@ -92,7 +104,7 @@ module ReVIEW
       end
 
       def display_string(id)
-        "#{number(id)}「#{title(id)}」"
+        "#{number(id)}#{I18n.t("chapter_quote", title(id))}"
       end
     end
 
@@ -131,16 +143,35 @@ module ReVIEW
 
 
     class ImageIndex < Index
+      def self.parse(src, *args)
+        items = []
+        seq = 1
+        src.grep(%r<^//#{item_type()}>) do |line|
+          # ex. ["//image", "id", "", "caption"]
+          elements = line.split(/\[(.*?)\]/)
+          if elements[1].present?
+            items.push item_class().new(elements[1], seq, elements[3])
+            seq += 1
+            if elements[1] == ""
+              warn "warning: no ID of #{item_type()} in #{line}"
+            end
+          end
+        end
+        new(items, *args)
+      end
+
       class Item
 
-        def initialize(id, number)
+        def initialize(id, number, caption = nil)
           @id = id
           @number = number
+          @caption = caption
           @path = nil
         end
 
         attr_reader :id
         attr_reader :number
+        attr_reader :caption
         attr_writer :index    # internal use only
 
         def bound?
@@ -150,7 +181,6 @@ module ReVIEW
         def path
           @path ||= @index.find_path(id)
         end
-
       end
 
       def ImageIndex.item_type
@@ -175,7 +205,6 @@ module ReVIEW
       def find_path(id)
         @image_finder.find_path(id)
       end
-
     end
 
     class IconIndex < ImageIndex
@@ -251,11 +280,6 @@ module ReVIEW
 
     class NumberlessImageIndex < ImageIndex
       class Item < ImageIndex::Item
-        def initialize(id, number)
-          @id = id
-          @number = ""
-          @path = nil
-        end
       end
 
       def NumberlessImageIndex.item_type
@@ -269,11 +293,6 @@ module ReVIEW
 
     class IndepImageIndex < ImageIndex
       class Item < ImageIndex::Item
-        def initialize(id, number)
-          @id = id
-          @number = ""
-          @path = nil
-        end
       end
 
       def IndepImageIndex.item_type
@@ -309,7 +328,7 @@ module ReVIEW
               inside_column = false
               next
             end
-            if indexs.present? and indexs[-1] <= index
+            if indexs.blank? || index <= indexs[-1]
               inside_column = false
             end
             if inside_column
@@ -344,7 +363,20 @@ module ReVIEW
       end
 
       def number(id)
-        return ([@chap.number] + @index.fetch(id).number).join(".")
+        n = @chap.number
+        if @chap.on_APPENDIX? && @chap.number > 0 && @chap.number < 28
+          type = @chap.book.config["appendix_format"].blank? ? "arabic" : @chap.book.config["appendix_format"].downcase.strip
+          n = case type
+              when "roman"
+                ROMAN[@chap.number]
+              when "alphabet", "alpha"
+                ALPHA[@chap.number]
+              else
+                # nil, "arabic", etc...
+                "#{@chap.number}"
+              end
+        end
+        return ([n] + self[id].number).join(".")
       end
     end
 

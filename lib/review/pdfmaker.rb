@@ -1,6 +1,6 @@
 # encoding: utf-8
 #
-# Copyright (c) 2010-2014 Kenshi Muto and Masayoshi Takahashi
+# Copyright (c) 2010-2015 Kenshi Muto and Masayoshi Takahashi
 #
 # This program is free software.
 # You can distribute or modify this program under the terms of
@@ -22,6 +22,14 @@ module ReVIEW
     include FileUtils
     include ReVIEW::LaTeXUtils
 
+    def initialize
+      @basedir = Dir.pwd
+    end
+
+    def system_or_raise(*args)
+      Kernel.system(*args) or raise("failed to run command: #{args.join(' ')}")
+    end
+
     def error(msg)
       $stderr.puts "#{File.basename($0, '.*')}: error: #{msg}"
       exit 1
@@ -33,9 +41,7 @@ module ReVIEW
 
     def check_book(config)
       pdf_file = config["bookname"]+".pdf"
-      if File.exist? pdf_file
-        error "file already exists:#{pdf_file}"
-      end
+      File.unlink(pdf_file) if File.exist?(pdf_file)
     end
 
     def build_path(config)
@@ -89,12 +95,12 @@ module ReVIEW
       config.merge!(YAML.load_file(yamlfile))
       # YAML configs will be overridden by command line options.
       config.merge!(cmd_config)
-      generate_pdf(config)
+      I18n.setup(config["language"])
+      generate_pdf(config, yamlfile)
     end
 
-    def generate_pdf(config)
+    def generate_pdf(config, yamlfile)
       check_book(config)
-      @basedir = Dir.pwd
       @path = build_path(config)
       bookname = config["bookname"]
       Dir.mkdir(@path)
@@ -102,10 +108,12 @@ module ReVIEW
       @chaps_fnames = Hash.new{|h, key| h[key] = ""}
       @compile_errors = nil
 
-      ReVIEW::Book.load(@basedir).parts.each do |part|
+      book = ReVIEW::Book.load(@basedir)
+      book.config = config
+      book.parts.each do |part|
         if part.name.present?
           if part.file?
-            output_parts(part.name, config)
+            output_chaps(part.name, config, yamlfile)
             @chaps_fnames["CHAPS"] << %Q|\\input{#{part.name}.tex}\n|
           else
             @chaps_fnames["CHAPS"] << %Q|\\part{#{part.name}}\n|
@@ -113,12 +121,12 @@ module ReVIEW
         end
 
         part.chapters.each do |chap|
-          filename = "#{File.basename(chap.path, ".*")}.tex"
-          output_chaps(filename, config)
-          @chaps_fnames["PREDEF"]  << "\\input{#{filename}}\n" if chap.on_PREDEF?
-          @chaps_fnames["CHAPS"]   << "\\input{#{filename}}\n" if chap.on_CHAPS?
-          @chaps_fnames["APPENDIX"] << "\\input{#{filename}}\n" if chap.on_APPENDIX?
-          @chaps_fnames["POSTDEF"] << "\\input{#{filename}}\n" if chap.on_POSTDEF?
+          filename = File.basename(chap.path, ".*")
+          output_chaps(filename, config, yamlfile)
+          @chaps_fnames["PREDEF"]  << "\\input{#{filename}.tex}\n" if chap.on_PREDEF?
+          @chaps_fnames["CHAPS"]   << "\\input{#{filename}.tex}\n" if chap.on_CHAPS?
+          @chaps_fnames["APPENDIX"] << "\\input{#{filename}.tex}\n" if chap.on_APPENDIX?
+          @chaps_fnames["POSTDEF"] << "\\input{#{filename}.tex}\n" if chap.on_POSTDEF?
         end
       end
 
@@ -136,26 +144,47 @@ module ReVIEW
 
       copy_images("./images", "#{@path}/images")
       copyStyToDir(Dir.pwd + "/sty", @path)
+      copyStyToDir(Dir.pwd + "/sty", @path, "fd")
+      copyStyToDir(Dir.pwd + "/sty", @path, "cls")
       copyStyToDir(Dir.pwd, @path, "tex")
 
       Dir.chdir(@path) {
         template = get_template(config)
         File.open("./book.tex", "wb"){|f| f.write(template)}
 
+        call_hook("hook_beforetexcompile", config)
+
         ## do compile
         enc = config["params"].to_s.split(/\s+/).find{|i| i =~ /\A--outencoding=/ }
         kanji = 'utf8'
-        if enc
-          kanji = enc.split(/\=/).last.gsub(/-/, '').downcase
+        texcommand = "platex"
+        texoptions = "-kanji=#{kanji}"
+        dvicommand = "dvipdfmx"
+        dvioptions = "-d 5"
+
+        if ENV["REVIEW_SAFE_MODE"].to_i & 4 > 0
+          warn "command configuration is prohibited in safe mode. ignored."
+        else
+          texcommand = config["texcommand"] if config["texcommand"]
+          dvicommand = config["dvicommand"] if config["dvicommand"]
+          dvioptions = config["dvioptions"] if config["dvioptions"]
+          if enc
+            kanji = enc.split(/\=/).last.gsub(/-/, '').downcase
+            texoptions = "-kanji=#{kanji}"
+          end
+          texoptions = config["texoptions"] if config["texoptions"]
         end
-        texcommand = config["texcommand"] || "platex"
         3.times do
-          system("#{texcommand} -kanji=#{kanji} book.tex")
+          system_or_raise("#{texcommand} #{texoptions} book.tex")
         end
-        if File.exist?("book.dvi")
-          system("dvipdfmx -d 5 book.dvi")
+        call_hook("hook_aftertexcompile", config)
+
+      if File.exist?("book.dvi")
+          system_or_raise("#{dvicommand} #{dvioptions} book.dvi")
         end
       }
+      call_hook("hook_afterdvipdf", config)
+      
       FileUtils.cp("#{@path}/book.pdf", "#{@basedir}/#{bookname}.pdf")
 
       unless config["debug"]
@@ -163,20 +192,9 @@ module ReVIEW
       end
     end
 
-    def output_chaps(filename, config)
-      $stderr.puts "compiling #{filename}"
-      cmd = "#{ReVIEW::MakerHelper.bindir}/review-compile --target=latex --level=#{config["secnolevel"]} --toclevel=#{config["toclevel"]} #{config["params"]} #{filename} > #{@path}/#{filename}"
-      if system cmd
-        # OK
-      else
-        @compile_errors = true
-        warn cmd
-      end
-    end
-
-    def output_parts(filename, config)
+    def output_chaps(filename, config, yamlfile)
       $stderr.puts "compiling #{filename}.tex"
-      cmd = "review-compile --target=latex --level=#{config["secnolevel"]} --toclevel=#{config["toclevel"]} #{config["params"]} #{filename}.re | sed -e s/\\chapter{/\\part{/ > #{@path}/#{filename}.tex"
+      cmd = "#{ReVIEW::MakerHelper.bindir}/review-compile --yaml=#{yamlfile} --target=latex --level=#{config["secnolevel"]} --toclevel=#{config["toclevel"]} #{config["params"]} #{filename}.re > #{@path}/#{filename}.tex"
       if system cmd
         # OK
       else
@@ -184,7 +202,6 @@ module ReVIEW
         warn cmd
       end
     end
-
 
     def copy_images(from, to)
       if File.exist?(from)
@@ -194,18 +211,19 @@ module ReVIEW
           images = Dir.glob("**/*").find_all{|f|
             File.file?(f) and f =~ /\.(jpg|jpeg|png|pdf)\z/
           }
+          break if images.empty?
           system("extractbb", *images)
           unless system("extractbb", "-m", *images)
-            system("ebb", *images)
+            system_or_raise("ebb", *images)
           end
         end
       end
     end
 
-    def make_custom_titlepage(coverfile)
-      coverfile_sty = coverfile.to_s.sub(/\.[^.]+$/, ".tex")
-      if File.exist?(coverfile_sty)
-        File.read(coverfile_sty)
+    def make_custom_page(file)
+      file_sty = file.to_s.sub(/\.[^.]+$/, ".tex")
+      if File.exist?(file_sty)
+        File.read(file_sty)
       else
         nil
       end
@@ -238,13 +256,16 @@ module ReVIEW
     def make_authors(config)
       authors = ""
       if config["aut"].present?
-        authors = join_with_separator(config["aut"], ReVIEW::I18n.t("names_splitter")) + ReVIEW::I18n.t("author_postfix")
+        author_names = join_with_separator(config["aut"], ReVIEW::I18n.t("names_splitter"))
+        authors = ReVIEW::I18n.t("author_with_label", author_names)
       end
       if config["csl"].present?
-        authors += " \\\\\n"+join_with_separator(config["csl"], ReVIEW::I18n.t("names_splitter")) + ReVIEW::I18n.t("supervisor_postfix")
+        csl_names = join_with_separator(config["csl"], ReVIEW::I18n.t("names_splitter"))
+        authors += " \\\\\n"+ ReVIEW::I18n.t("supervisor_with_label", csl_names)
       end
       if config["trl"].present?
-        authors += " \\\\\n"+join_with_separator(config["trl"], ReVIEW::I18n.t("names_splitter")) + ReVIEW::I18n.t("translator_postfix")
+        trl_names = join_with_separator(config["trl"], ReVIEW::I18n.t("names_splitter"))
+        authors += " \\\\\n"+ ReVIEW::I18n.t("translator_with_label", trl_names)
       end
       authors
     end
@@ -257,7 +278,16 @@ module ReVIEW
       okuduke = make_colophon(config)
       authors = make_authors(config)
 
-      custom_titlepage = make_custom_titlepage(config["coverfile"])
+      custom_titlepage = make_custom_page(config["coverfile"])
+      custom_originaltitlepage = make_custom_page(config["originaltitlefile"])
+      custom_creditpage = make_custom_page(config["creditfile"])
+
+      custom_profilepage = make_custom_page(config["profile"])
+      custom_advfilepage = make_custom_page(config["advfile"])
+      if config["colophon"] && config["colophon"].kind_of?(String)
+        custom_colophonpage = make_custom_page(config["colophon"])
+      end
+      custom_backcoverpage = make_custom_page(config["backcover"])
 
       template = File.expand_path('layout.tex.erb', File.dirname(__FILE__))
       layout_file = File.join(@basedir, "layouts", "layout.tex.erb")
@@ -285,6 +315,17 @@ module ReVIEW
           end
         }
       }
+    end
+
+    def call_hook(hookname, config)
+      if config["pdfmaker"].instance_of?(Hash) && config["pdfmaker"][hookname]
+        hook = File.absolute_path(config["pdfmaker"][hookname], @basedir)
+        if ENV["REVIEW_SAFE_MODE"].to_i & 1 > 0
+          warn "hook configuration is prohibited in safe mode. ignored."
+        else
+          system_or_raise("#{hook} #{Dir.pwd} #{@basedir}")
+        end
+      end
     end
   end
 end
